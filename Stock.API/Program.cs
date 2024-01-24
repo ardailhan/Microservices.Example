@@ -1,6 +1,7 @@
 using MassTransit;
-using Microsoft.EntityFrameworkCore;
-using Order.API.Models;
+using Shared;
+using Stock.API.Consumers;
+using Stock.API.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -9,17 +10,20 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
-builder.Services.AddDbContext<OrderAPIDbContext>(options =>
-{
-    options.UseSqlServer(builder.Configuration.GetConnectionString("SQLServer"));
-});
+
 builder.Services.AddMassTransit(configurator =>
 {
+    configurator.AddConsumer<OrderCreatedEventConsumer>();
+
     configurator.UsingRabbitMq((context, _configurator) =>
     {
         _configurator.Host(builder.Configuration["RabbitMQ"]);
+        _configurator.ReceiveEndpoint(RabbitMQSettings.Stock_OrderCreatedEventQueue, e => e.ConfigureConsumer<OrderCreatedEventConsumer>(context));
     });
 });
+
+builder.Services.AddSingleton<MongoDBService>();
+
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
