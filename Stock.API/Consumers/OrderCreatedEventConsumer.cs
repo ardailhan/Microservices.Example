@@ -11,10 +11,12 @@ namespace Stock.API.Consumers
     {
         IMongoCollection<Stock.API.Models.Entities.Stock> _stockCollection;
         readonly ISendEndpointProvider _sendEndpointProvider;
-        public OrderCreatedEventConsumer(MongoDBService mongoDBService, ISendEndpointProvider sendEndpointProvider)
+        readonly IPublishEndpoint _publishEndpoint;
+        public OrderCreatedEventConsumer(MongoDBService mongoDBService, ISendEndpointProvider sendEndpointProvider, IPublishEndpoint publishEndpoint)
         {
             _stockCollection = mongoDBService.GetCollection<Stock.API.Models.Entities.Stock>();
             _sendEndpointProvider = sendEndpointProvider;
+            _publishEndpoint = publishEndpoint;
         }
 
         public async Task Consume(ConsumeContext<OrderCreatedEvent> context)
@@ -24,7 +26,7 @@ namespace Stock.API.Consumers
             {
                 stockResult.Add((await _stockCollection.FindAsync(s => s.ProductId == orderItem.ProductId && s.Count >= orderItem.Count)).Any());
             }
-            if (stockResult.TrueForAll(sr => sr.Equals(true))) 
+            if (stockResult.TrueForAll(sr => sr.Equals(true)))
             {
                 foreach (OrderItemMessage orderItem in context.Message.OrderItems)
                 {
@@ -42,12 +44,22 @@ namespace Stock.API.Consumers
 
                 ISendEndpoint sendEndpoint = await _sendEndpointProvider.GetSendEndpoint(new Uri($"queue:{RabbitMQSettings.Payment_StockReservedEventQueue}"));
                 await sendEndpoint.Send(stockReservedEvent);
+                await Console.Out.WriteLineAsync("Stok İşlemleri Başarılı..");
             }
             else
             {
                 //Siparişin tutarsız yani geçersiz olduguna dair işlemler..
+                StockNotReservedEvent stockNotReservedEvent = new()
+                {
+                    BuyerId = context.Message.BuyerId,
+                    OrderId = context.Message.OrderId,
+                    Message = "..."
+                };
+
+                await _publishEndpoint.Publish(stockNotReservedEvent);
+                await Console.Out.WriteLineAsync("Stok İşlemleri Başarısız..");
             }
-            return Task.CompletedTask;
+            //return Task.CompletedTask;
         }
     }
 }
